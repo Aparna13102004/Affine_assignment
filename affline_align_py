@@ -1,0 +1,154 @@
+import sys
+from Bio import SeqIO
+
+
+def read_fasta(filename):
+    """
+    Read first sequence from a FASTA file using Biopython.
+    """
+    record = SeqIO.read(filename, "fasta")
+    t = str(record.seq)
+    return t
+
+
+def affine_local_alignment(seq1, seq2, match, mismatch, gap_open, gap_extend):
+    """
+    Smith-Waterman Local Alignment with Affine Gap Penalty
+    """
+
+    n = len(seq1)
+    m = len(seq2)
+
+    init_value = 0
+    index_shift = 1
+
+    NEG_INF = -10**9
+
+    M = [[init_value] * (len(seq2) + index_shift) for _ in range(len(seq1) + index_shift)]
+    Ix = [[NEG_INF] * (len(seq2) + index_shift) for _ in range(len(seq1) + index_shift)]
+    Iy = [[NEG_INF] * (len(seq2) + index_shift) for _ in range(len(seq1) + index_shift)]
+
+    max_score = init_value
+    max_i, max_j = init_value, init_value
+    max_state = "M"
+
+    for i in range(index_shift, n + index_shift):
+        for j in range(index_shift, m + index_shift):
+
+            score = match if seq1[i - index_shift] == seq2[j - index_shift] else mismatch
+
+            M[i][j] = max(
+                init_value,
+                M[i - index_shift][j - index_shift] + score,
+                Ix[i - index_shift][j - index_shift] + score,
+                Iy[i - index_shift][j - index_shift] + score
+            )
+
+            Ix[i][j] = max(
+                M[i][j - index_shift] - (gap_open + gap_extend),
+                Ix[i][j - index_shift] - gap_extend
+            )
+
+            Iy[i][j] = max(
+                M[i - index_shift][j] - (gap_open + gap_extend),
+                Iy[i - index_shift][j] - gap_extend
+            )
+
+            current = max(M[i][j], Ix[i][j], Iy[i][j])
+
+            if current > max_score:
+                max_score = current
+                max_i, max_j = i, j
+                if current == M[i][j]:
+                    max_state = "M"
+                elif current == Ix[i][j]:
+                    max_state = "Ix"
+                else:
+                    max_state = "Iy"
+
+    # Traceback
+    
+    empty_string = ""
+    align1 = empty_string
+    align2 = empty_string
+
+    i, j = max_i, max_j
+    state = max_state
+
+    while i - init_value > init_value and j - init_value > init_value:
+
+        if state == "M":
+            if M[i][j] == init_value:
+                break
+
+            score = match if seq1[i - index_shift] == seq2[j - index_shift] else mismatch
+
+            if M[i][j] == M[i - index_shift][j - index_shift] + score:
+                state = "M"
+            elif M[i][j] == Ix[i - index_shift][j - index_shift] + score:
+                state = "Ix"
+            else:
+                state = "Iy"
+
+            align1 = seq1[i - index_shift] + align1
+            align2 = seq2[j - index_shift] + align2
+            i = i - index_shift
+            j = j - index_shift
+
+        elif state == "Ix":
+            if Ix[i][j] == M[i][j - index_shift] - (gap_open + gap_extend):
+                state = "M"
+            else:
+                state = "Ix"
+
+            align1 = "-" + align1
+            align2 = seq2[j - index_shift] + align2
+            j = j - index_shift
+
+        else:  # Iy
+            if Iy[i][j] == M[i - index_shift][j] - (gap_open + gap_extend):
+                state = "M"
+            else:
+                state = "Iy"
+
+            align1 = seq1[i - index_shift] + align1
+            align2 = "-" + align2
+            i = i - index_shift
+
+    return align1, align2, max_score
+
+
+N_ARGS = 3
+
+if len(sys.argv) != N_ARGS:
+    print("\nUsage: python affine-alignment.py <seq1.fasta> <seq2.fasta>\n")
+    print("Please provide exactly two FASTA files as input.")
+    sys.exit(1)
+
+N_1 = 1
+N_2 = 2
+
+file1 = sys.argv[N_1]
+file2 = sys.argv[N_2]
+
+seq1 = read_fasta(file1)
+seq2 = read_fasta(file2)
+
+print("   SCORING MATRIX INPUT")
+print("Please enter the scoring parameters:\n")
+
+match = int(input("Match score: "))
+mismatch = int(input("Mismatch score: "))
+gap_open = int(input("Gap Opening penalty: "))
+gap_extend = int(input("Gap Extension penalty: "))
+
+print("   COMPUTING ALIGNMENT...")
+
+align1, align2, score = affine_local_alignment(
+    seq1, seq2, match, mismatch, gap_open, gap_extend
+)
+
+print("\n===== BEST LOCAL ALIGNMENT =====\n")
+print(align1)
+print(align2)
+print("\nAlignment Score:", score)
